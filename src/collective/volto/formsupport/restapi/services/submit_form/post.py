@@ -54,7 +54,7 @@ class SubmitPost(Service):
         self.validate_form()
 
         store_action = self.block.get("store", False)
-        send_action = self.block.get("send", False)
+        send_action = self.block.get("send", [])
 
         # Disable CSRF protection
         alsoProvides(self.request, IDisableCSRFProtection)
@@ -108,7 +108,7 @@ class SubmitPost(Service):
                 ),
             )
 
-        if not self.block.get("store", False) and not self.block.get("send", False):
+        if not self.block.get("store", False) and not self.block.get("send", []):
             raise BadRequest(
                 translate(
                     _(
@@ -222,6 +222,14 @@ class SubmitPost(Service):
                 bcc.append(data["value"])
         return bcc
 
+    def get_acknowledgement_field_value(self):
+        acknowledgementField = self.block["acknowledgementFields"]
+        for field in self.block.get("subblocks", []):
+            if field.get("field_id") == acknowledgementField:
+                for data in self.form_data.get("data", []):
+                    if data.get("field_id", "") == field.get("field_id"):
+                        return data.get("value")
+
     def send_data(self):
         subject = self.form_data.get("subject", "") or self.block.get(
             "default_subject", ""
@@ -269,8 +277,30 @@ class SubmitPost(Service):
             if header_value:
                 msg[header] = header_value
 
+        should_send = self.block.get("send", [])
         self.manage_attachments(msg=msg)
-        self.send_mail(msg=msg, charset=charset)
+        if should_send:
+            if isinstance(should_send, list):
+                if "recipient" in self.block.get(
+                    "send", []
+                ):
+                    self.send_mail(msg=msg, charset=charset)
+                # Backwards compatibility for forms before 'acknowledgement' sending
+            else:
+                self.send_mail(msg=msg, charset=charset)
+
+        acknowledgement_message = self.block.get("acknowledgementMessage")
+        if acknowledgement_message and "acknowledgement" in self.block.get("send", []):
+            acknowledgement_address = self.get_acknowledgement_field_value()
+            if acknowledgement_address:
+                acknowledgement_mail = EmailMessage()
+                acknowledgement_mail["Subject"] = subject
+                acknowledgement_mail["From"] = mfrom
+                acknowledgement_mail["To"] = acknowledgement_address
+                acknowledgement_mail.set_content(
+                    acknowledgement_message.get("data"), subtype="html", charset="utf-8"
+                )
+                self.send_mail(msg=acknowledgement_mail, charset=charset)
 
         for bcc in self.get_bcc():
             # send a copy also to the fields with bcc flag
