@@ -290,7 +290,7 @@ class SubmitPost(Service):
                 self.send_mail(msg=msg, charset=charset)
 
         acknowledgement_message = self.block.get("acknowledgementMessage")
-        if acknowledgement_message and "acknowledgement" in self.block.get("send", []):
+        if acknowledgement_message and "acknowledgement" in self.block.get("store", []):
             acknowledgement_address = self.get_acknowledgement_field_value()
             if acknowledgement_address:
                 acknowledgement_mail = EmailMessage()
